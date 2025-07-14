@@ -25,11 +25,11 @@
 
 1. `.github/workflows/claude-code-cron.yml`をあなたのリポジトリの同じパスにコピー
 
-以上！これだけで動作します。
+以上。これだけで動作します。
 
 ### 設定（オプション）
 
-Repository variablesで以下を設定できます：
+Repository variablesで以下を設定できます。
 
 - `CLAUDE_PROCESS_LABELS`: 処理対象のラベル（デフォルト: `claude-code`）
 - `CLAUDE_MAX_ISSUES`: 一度に処理する最大issue数（デフォルト: `5`）
@@ -40,17 +40,14 @@ Repository variablesで以下を設定できます：
 2. 既に`claude-processed`ラベルが付いているissueはスキップ
 3. 各issueに`@claude`メンションを含むコメントを追加
 4. `claude-processing`ラベルを追加して処理中であることを示す
-5. 既存のClaude Code Actionが起動し、コード修正とPR作成を実行
+5. 既存のClaude Code Actionが起動し、コード修正とPRを作成
 
 ## 実行タイミング
 
-以下の時間に自動実行されます（日本時間）：
-- 01:23
-- 02:47
-- 03:11
-- 04:31
+日本時間の深夜0時から朝9時まで、30分ごとに自動実行されます。
+- 00:00, 00:30, 01:00, 01:30, ..., 08:00, 08:30, 09:00
 
-手動実行も可能：GitHub Actionsの画面から「Run workflow」をクリック
+手動実行も可能：GitHub Actionsの画面から「Run workflow」をクリック。
 
 ## ラベルの意味
 
