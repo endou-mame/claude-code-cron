@@ -1,0 +1,138 @@
+# Claude Code Issue Trigger
+#
+# このファイルを .github/workflows/ にコピーするだけで使えます
+# 必要な設定:
+# - Repository secrets: ANTHROPIC_API_KEY (既存のClaude Code Actionで設定済みのはず)
+# - Repository variables (オプション):
+#   - CLAUDE_PROCESS_LABELS: 処理対象のラベル (デフォルト: 'claude-code')
+#   - CLAUDE_MAX_ISSUES: 一度に処理する最大issue数 (デフォルト: '5')
+
+name: Claude Code Issue Trigger
+
+on:
+  schedule:
+    # JST 23:00-06:00の間、30分ごとに実行
+    # JST = UTC + 9時間
+    # JST 23:00 = UTC 14:00, JST 06:00 = UTC 21:00
+    - cron: '0,30 15-20 * * *'  # UTC 15:00-00:00 (JST 00:00-09:00)
+  workflow_dispatch:  # 手動実行も可能
+
+env:
+  # 処理対象のラベル（カンマ区切り）
+  CLAUDE_PROCESS_LABELS: ${{ vars.CLAUDE_PROCESS_LABELS || 'claude-code' }}
+  # 一度に処理する最大issue数
+  CLAUDE_MAX_ISSUES: ${{ vars.CLAUDE_MAX_ISSUES || '5' }}
+
+permissions:
+  issues: write
+
+jobs:
+  trigger-claude:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Show current time in Japan
+        env:
+          TZ: 'Asia/Tokyo'
+        run: |
+          echo "Current time in Japan: $(date)"
+          echo "Processing issues with labels: $CLAUDE_PROCESS_LABELS"
+
+      - name: Trigger Claude Code Action on issues
+        uses: actions/github-script@v7
+        env:
+          CLAUDE_PROCESS_LABELS: ${{ env.CLAUDE_PROCESS_LABELS }}
+          CLAUDE_MAX_ISSUES: ${{ env.CLAUDE_MAX_ISSUES }}
+        with:
+          script: |
+            const labelsStr = process.env.CLAUDE_PROCESS_LABELS || 'claude-code';
+            const maxIssues = parseInt(process.env.CLAUDE_MAX_ISSUES || '5', 10);
+            const labels = labelsStr.split(',').map(label => label.trim());
+
+            console.log('Processing issues for ' + context.repo.owner + '/' + context.repo.repo + ' with labels: ' + labels.join(', '));
+            console.log('Max issues to process: ' + maxIssues);
+
+            // 指定されたラベルを持つissueを取得
+            const issues = await github.rest.issues.listForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              labels: labels.join(','),
+              state: 'open',
+              per_page: maxIssues
+            });
+
+            console.log('Found ' + issues.data.length + ' issues to process');
+
+            if (issues.data.length === 0) {
+              console.log('No issues found with the specified labels');
+              return;
+            }
+
+            const results = [];
+
+            for (const issue of issues.data) {
+              console.log('\nProcessing issue #' + issue.number + ': ' + issue.title);
+
+              try {
+                // 既にclaude-processedラベルがある場合はスキップ
+                if (issue.labels.some(label => label.name === 'claude-processed')) {
+                  console.log('⏭️ Issue #' + issue.number + ' already processed, skipping');
+                  continue;
+                }
+
+                // @claudeメンションを含むコメントを追加
+                const triggerComment = '@claude このissueを解決してください。\n\n' +
+                  '以下の点に注意してください：\n' +
+                  '- issueの内容を正確に理解し、適切なコード修正を行ってください\n' +
+                  '- 必要に応じてテストも追加・更新してください\n' +
+                  '- 変更は最小限に留めてください\n' +
+                  '- Pull Requestを作成してください\n\n' +
+                  '---\n' +
+                  '*このコメントは定期実行により自動生成されました*';
+
+                await github.rest.issues.createComment({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: issue.number,
+                  body: triggerComment
+                });
+
+                // claude-processingラベルを追加
+                await github.rest.issues.addLabels({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: issue.number,
+                  labels: ['claude-processing']
+                });
+
+                results.push({
+                  issue: issue.number,
+                  processed: true,
+                  result: 'Claude Code Actionをトリガーしました'
+                });
+
+                console.log('✅ Successfully triggered Claude Code Action for issue #' + issue.number);
+
+              } catch (error) {
+                console.error('❌ Failed to process issue #' + issue.number + ':', error);
+
+                results.push({
+                  issue: issue.number,
+                  processed: false,
+                  error: error.message || 'Unknown error'
+                });
+              }
+            }
+
+            const successCount = results.filter(r => r.processed).length;
+            console.log('\n処理完了: ' + successCount + '/' + results.length + ' issues が正常に処理されました');
+
+      - name: Summary
+        if: always()
+        run: |
+          echo "## Claude Code Issue Trigger Summary" >> $GITHUB_STEP_SUMMARY
+          echo "- Repository: ${{ github.repository }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Labels: $CLAUDE_PROCESS_LABELS" >> $GITHUB_STEP_SUMMARY
+          echo "- Max Issues: $CLAUDE_MAX_ISSUES" >> $GITHUB_STEP_SUMMARY
+          echo "- Run Time: $(date -u)" >> $GITHUB_STEP_SUMMARY
+
